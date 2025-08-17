@@ -9,22 +9,56 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r Library}
+# Load libraries
+library(tidyverse)   #Cleaning & visualization
+library(cluster)     #Clustering
+library(factoextra)  #Cluster visualization
+library(dplyr)       #Data wrangling
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r Data}
+# Load data (adjust path if needed)
+data <- read.csv("../data/marketing_campaign.csv")
+```
+```{r data exploration}
+summary(data)
+colSums(is.na(data))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r cleaning}
+# Updating categorical columns
+data$Education <- as.factor(data$Education)
+data$Marital_Status <- as.factor(data$Marital_Status)
+
+# Converting birth year to age 
+current_year <- as.numeric(format(Sys.Date(), "%Y"))
+
+data <- data %>%
+  mutate(Age = current_year - Year_Birth) 
+
+# Adjusting age range
+data <- data %>%
+  filter(Age >= 18 & Age <= 100)
+
+# Select features for clustering
+cluster_data <- data %>%
+  select(
+    Age, Income, Education, Marital_Status, 
+    MntWines, MntFruits, MntMeatProducts, MntFishProducts,
+    MntSweetProducts, MntGoldProds, NumDealsPurchases, NumWebPurchases,
+    NumCatalogPurchases, NumStorePurchases, NumWebVisitsMonth, Kidhome,
+    Teenhome
+  )
+
+# Convert categorical variables to numeric
+cluster_data$Education <- as.numeric(cluster_data$Education)
+cluster_data$Marital_Status<- as.numeric(cluster_data$Marital_Status)
+# Scale the data for clustering
+cluster_data_scaled <- scale(cluster_data)
+
+# Quick look at the cleaned, scaled data
+head(cluster_data_scaled)
+```
