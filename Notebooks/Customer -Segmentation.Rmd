@@ -25,13 +25,17 @@ library(scales)
 ```{r Data}
 # Load data (adjust path if needed)
 data <- read.csv("../data/marketing_campaign.csv")
-```
-```{r data exploration}
+
 summary(data)
 colSums(is.na(data))
+
 ```
 
 ```{r cleaning}
+#Removing missing values
+data <- data %>% 
+  filter(!is.na(Income))
+#colSums(is.na(data))
 # Updating categorical columns
 data$Education <- as.factor(data$Education)
 data$Marital_Status <- as.factor(data$Marital_Status)
@@ -62,7 +66,7 @@ cluster_data$Marital_Status<- as.numeric(cluster_data$Marital_Status)
 # Scale the data for clustering
 cluster_data_scaled <- scale(cluster_data)
 
-# Quick look at the cleaned, scaled data
+# Cleaned and scaled data
 head(cluster_data_scaled)
 ```
 ```{r Data analysis}
@@ -80,7 +84,7 @@ ggplot(removed_outliers, aes(x = Income)) +
   scale_x_continuous(labels = comma, limits =
   c(min(removed_outliers$Income, na.rm = TRUE), 
   max(removed_outliers$Income, na.rm =TRUE))) +
-  labs(title = "Income Distribution", x = "Income", y = "Count") +
+  labs(title = "Income Distribution", x = "Income", y = "Count", caption = "Outlier at $666,000") +
   theme_minimal()
 
 # Income by Education 
@@ -90,7 +94,7 @@ ggplot(removed_outliers, aes(x = Education, y = Income)) +
   c(min(removed_outliers$Income, na.rm = TRUE), 
   max(removed_outliers$Income, na.rm = TRUE))) +
   labs(title = "Income by Education Level", x = "Education Level", y =
-  "Income") +
+  "Income", caption = "Outlier of $666,000 removed from gradution") +
   theme_minimal()
 
 # Marital Status counts
@@ -126,5 +130,105 @@ numeric_vars <- cluster_data_scaled  # scaled numeric variables for clustering
 cor_matrix <- cor(numeric_vars)
 library(corrplot)
 corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.7)
+
+```
+
+```{r Clustering}
+Clustering_data <- removed_outliers %>% 
+  select(Age, Income, MntWines, MntFruits, MntMeatProducts,
+         MntFishProducts, MntSweetProducts, MntGoldProds,
+         NumDealsPurchases, NumWebPurchases, 
+         NumCatalogPurchases, NumStorePurchases)
+scaled_clustering <- scale(Clustering_data)
+# K-means Clustering
+wss <- vector()
+# Elbow plot 
+for (i in 1:10) {
+  km <- kmeans(scaled_clustering, centers = i, nstart = 25)
+  wss[i] <- km$tot.withinss
+}
+
+plot(1:10, wss, type = "b", pch = 19, frame = FALSE,
+     xlab = "Number of Clusters (k)",
+     ylab = "Total Within-Cluster Sum of Squares",
+     main = "Elbow Method for K-means")
+
+set.seed(2025)
+km_result <- kmeans(scaled_clustering, centers = 3, nstart = 25)
+
+#Labeling
+removed_outliers$Cluster <- as.factor(km_result$cluster)
+
+#Visualizing clusters 
+fviz_cluster(km_result, data = scaled_clustering,
+             geom = "point", stand = FALSE,
+             ellipse.type = "norm", 
+             main = "Customer Segments (K-means)")
+
+#Customer Profile
+cluster_profiles <- removed_outliers %>%
+  group_by(Cluster) %>%
+  summarise(across(c(Age, Income, MntWines:MntGoldProds,
+                     NumDealsPurchases:NumStorePurchases), 
+                   mean, na.rm = TRUE))
+
+print(cluster_profiles)
+```
+
+```{r}
+# Creating cluster profiles 
+cluster_profiles <- removed_outliers %>%
+  group_by(Cluster) %>%
+  summarise(
+    Age = mean(Age, na.rm = TRUE),
+    Income = mean(Income, na.rm = TRUE),
+    NumDealsPurchases = mean(NumDealsPurchases, na.rm = TRUE),
+    Kidhome = round(mean(Kidhome, na.rm = TRUE), 1),
+    Marital_Status = names(sort(table(Marital_Status), decreasing = TRUE))[1],
+    across(MntWines:MntGoldProds, mean, na.rm = TRUE),
+    across(NumWebPurchases:NumStorePurchases, mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+# Coupon usage
+coupon_threshold <- median(removed_outliers$NumDealsPurchases, na.rm = TRUE)
+
+cluster_profiles <- cluster_profiles %>%
+  mutate(CouponUsage = case_when(
+    NumDealsPurchases >= coupon_threshold ~ "Frequent coupon users",
+    TRUE ~ "Occasional coupon users"
+  ))
+# Household 
+cluster_profiles <- cluster_profiles %>%
+  mutate(
+    Household = case_when(
+      Kidhome == 0 ~ paste(Marital_Status, "- no kids"),
+      Kidhome > 0 ~ paste(Marital_Status, "-", Kidhome, "kid(s)"),
+      TRUE ~ Marital_Status
+    )
+  )
+#Automating cluster profile write up
+for (c in unique(removed_outliers$Cluster)) {
+  profile <- cluster_profiles %>% filter(Cluster == c)
+  
+  cat(paste0("Cluster ", c, ":\n"))
+  cat(paste0(" - Average age: ", round(profile$Age, 1), "\n"))
+  cat(paste0(" - Average income: $", scales::comma(round(profile$Income, 0)), "\n"))
+  cat(paste0(" - Coupon behavior: ", profile$CouponUsage, "\n"))
+  cat(paste0(" - Household: ", profile$Household, "\n"))
+  cat(" - Spending highlights:\n")
+  
+  # Top 2 product categories
+  top_spend <- profile %>% 
+    select(MntWines:MntGoldProds) %>%
+    pivot_longer(everything()) %>%
+    arrange(desc(value)) %>%
+    slice(1:2)
+  
+  for (i in 1:nrow(top_spend)) {
+    cat(paste0("   • ", top_spend$name[i], ": ", round(top_spend$value[i], 1), "\n"))
+  }
+  
+  cat("\n")
+}
 
 ```
